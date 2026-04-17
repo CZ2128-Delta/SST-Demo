@@ -9,24 +9,42 @@ from PIL import Image
 
 # parse the arguments
 parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--support_image', type=str, help='Path to the support image.')
-parser.add_argument('--support_mask', type=str, help='Path to the support segmentation mask.')
+parser.add_argument(
+    '--support_image',
+    type=str,
+    nargs='+',
+    help='Path(s) to support image(s). Pass one path (single-shot) or multiple paths (few-shot); order matches --support_mask.',
+)
+parser.add_argument(
+    '--support_mask',
+    type=str,
+    nargs='+',
+    help='Path(s) to support mask(s), same count as --support_image. Each mask uses labels 1..N per object (same as before).',
+)
 parser.add_argument('--query_images', type=str, help='Path to the query images folder.')
 parser.add_argument('--output', type=str, help='Path to the output folder.')
 parser.add_argument('--output_format', choices=["png", "gif"], default='gif', help='Output format (optional): gif, png.')
 
 args = parser.parse_args()
-support_image_path = args.support_image
-support_mask_path = args.support_mask
+support_image_paths = args.support_image
+support_mask_paths = args.support_mask
 query_images_folder = args.query_images
 output_folder = args.output
 output_format = args.output_format
 
-# load the support image and mask
-print ("Loading support image and mask...")
-support_image = cv2.imread(support_image_path)[..., ::-1]
-support_mask = cv2.imread(support_mask_path, cv2.IMREAD_GRAYSCALE)
-support_masks = [support_mask == i for i in range(1, support_mask.max()+1)]
+if len(support_image_paths) != len(support_mask_paths):
+    parser.error('--support_image and --support_mask must have the same number of paths.')
+
+# load the support image(s) and mask(s)
+print('Loading support image(s) and mask(s)...')
+support_images = [cv2.imread(p)[..., ::-1] for p in support_image_paths]
+support_masks_list = []
+for p in support_mask_paths:
+    support_mask = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
+    support_masks_list.append(
+        [support_mask == i for i in range(1, int(support_mask.max()) + 1)]
+    )
+num_support = len(support_images)
 
 # load the query images
 query_images = sorted(os.listdir(query_images_folder))
@@ -37,13 +55,16 @@ video_predictor = sam_utils.build_sam2_predictor()
 
 # load the support image and mask
 print ("Inferring the masks...")
-state = sam_utils.load_masks(video_predictor, query_images, support_image, support_masks, verbose=True)
+state = sam_utils.load_masks(
+    video_predictor, query_images, support_images, support_masks_list, verbose=True
+)
 frames_info = sam_utils.propagate_masks(video_predictor, state, verbose=True)
+frames_info_queries = frames_info[num_support:]
 
 # visualize the results
 output_imgs = []
 print ("Visualizing the results...")
-for i, frame in enumerate(frames_info):
+for i, frame in enumerate(frames_info_queries):
     plt.clf()
     plt.figure(figsize=(10, 10))
     plt.imshow(query_images[i])

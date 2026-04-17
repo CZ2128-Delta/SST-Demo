@@ -156,27 +156,50 @@ def load_masks(video_predictor, query_images, support_image, support_masks, offl
     '''
     video_predictor: sam2 predictor
     query_images: list of np.array of shape (H, W, 3)
-    support_image: np.array of shape (H, W, 3)
-    support_masks: list of np.array of shape (H, W)
+    support_image: np.array of shape (H, W, 3), or a list/tuple of such arrays (few-shot / multi conditioning frames).
+    support_masks: list of boolean/H, W masks for each object on the support frame(s). If support_image is a sequence,
+        support_masks must be a list of K elements, each element is the same list-of-masks format as the single-shot case.
     offload_video_to_cpu: for long video sequences, offload the video to the CPU to save GPU memory
     offload_state_to_cpu: save GPU memory by offloading the state to the CPU
-    '''
-    query_images.insert(0, support_image)
-    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-        state = video_predictor.init_state(None, image_inputs=query_images, async_loading_frames=False, offload_video_to_cpu=offload_video_to_cpu, offload_state_to_cpu=offload_state_to_cpu, verbose=verbose)
-        video_predictor.reset_state(state)
-        for i, patch_mask in enumerate(support_masks):
-            ann_frame_idx = 0
-            ann_obj_id = i  # give a unique id to each object we interact with
-            patch_mask = np.array(patch_mask, dtype=np.uint8)
 
-            patch_mask = cv2.resize(patch_mask, (1024, 1024))
-            _, _, _ = video_predictor.add_new_mask(
-                inference_state=state,
-                frame_idx=ann_frame_idx,
-                obj_id=ann_obj_id,
-                mask=patch_mask,
+    Frames are ordered as [support_0, ..., support_{K-1}, query_0, ...]; SAM 2 accepts mask prompts on multiple
+    frame_idx values before propagation (native multi-frame conditioning).
+    '''
+    if isinstance(support_image, np.ndarray):
+        support_images = [support_image]
+        masks_per_frame = [support_masks]
+    else:
+        support_images = list(support_image)
+        masks_per_frame = list(support_masks)
+        if len(masks_per_frame) != len(support_images):
+            raise ValueError(
+                f"Few-shot: expected len(support_masks) == len(support_image) "
+                f"({len(support_images)} support images, {len(masks_per_frame)} mask groups)."
             )
+
+    all_frames = list(support_images) + list(query_images)
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+        state = video_predictor.init_state(
+            None,
+            image_inputs=all_frames,
+            async_loading_frames=False,
+            offload_video_to_cpu=offload_video_to_cpu,
+            offload_state_to_cpu=offload_state_to_cpu,
+            verbose=verbose,
+        )
+        video_predictor.reset_state(state)
+        for ann_frame_idx, frame_masks in enumerate(masks_per_frame):
+            for i, patch_mask in enumerate(frame_masks):
+                ann_obj_id = i
+                patch_mask = np.array(patch_mask, dtype=np.uint8)
+
+                patch_mask = cv2.resize(patch_mask, (1024, 1024))
+                _, _, _ = video_predictor.add_new_mask(
+                    inference_state=state,
+                    frame_idx=ann_frame_idx,
+                    obj_id=ann_obj_id,
+                    mask=patch_mask,
+                )
     return state
 
 def propagate_masks(video_predictor, state, verbose=False):

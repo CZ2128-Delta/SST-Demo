@@ -67,7 +67,7 @@ for path in tqdm(query_image_paths, desc="processing and saving"):
     state = sam_utils.load_masks(video_predictor, [img], support_image, support_masks, verbose=False)
     frames_info = sam_utils.propagate_masks(video_predictor, state, verbose=False)
         
-    frame = frames_info[1] # skip template frame
+    frame = frames_info[-1]  # single query frame: last after support frame(s)
     
     # Create masked image where only mask regions are visible
     query_img = img.copy()
