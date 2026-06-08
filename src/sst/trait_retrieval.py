@@ -87,7 +87,7 @@ query_images = sorted(os.listdir(query_images_folder))
 query_images = [cv2.imread(os.path.join(query_images_folder, img))[..., ::-1] for img in query_images]
 
 # build the predictor
-video_predictor = sam_utils.build_sam2_predictor(checkpoint="../checkpoints/sam2_hiera_large.pt")
+video_predictor = sam_utils.build_sam2_predictor()
 
 retrieve_scores = []
 retrieve_vis = []
@@ -97,8 +97,8 @@ for i, query_image in enumerate(tqdm(query_images)):
     retrieve_scores.append(iou_records[0])
     retrieve_vis.append(vises[0])
 
-# sort the query images based on the retrieval scores
-sorted_indices = np.argsort(retrieve_scores)
+# sort the query images by cycle-consistency IoU (higher = better trait match)
+sorted_indices = np.argsort(retrieve_scores)[::-1]
 sorted_retrieved_images = [retrieve_vis[i] for i in sorted_indices]
 
 if output_format == "gif":

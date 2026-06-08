@@ -9,3 +9,5 @@ out/
 *.pkl
 *.so
 **.DS_Store
+
+demo/
