@@ -1,11 +1,29 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import sam_utils
 import cv2
-import io
 import argparse
 from PIL import Image
+
+
+def overlay_masks(img, masks, obj_ids, alpha=0.75, borders=True):
+    result = img.copy()
+    cmap = cm.get_cmap("tab10")
+    for j, mask in enumerate(masks):
+        color = (np.array(cmap(obj_ids[j])[:3]) * 255).astype(np.uint8)
+        m = mask.astype(bool)
+        result[m] = (
+            result[m].astype(np.float32) * (1 - alpha) + color.astype(np.float32) * alpha
+        ).astype(np.uint8)
+        if borders:
+            contours, _ = cv2.findContours(
+                mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+            )
+            contours = [cv2.approxPolyDP(c, epsilon=0.01, closed=True) for c in contours]
+            border_color = tuple(int(c) for c in color)
+            cv2.drawContours(result, contours, -1, border_color, thickness=2)
+    return result
 
 # parse the arguments
 parser = argparse.ArgumentParser(description='Process some integers.')
@@ -65,20 +83,14 @@ frames_info_queries = frames_info[num_support:]
 output_imgs = []
 print ("Visualizing the results...")
 for i, frame in enumerate(frames_info_queries):
-    plt.clf()
-    plt.figure(figsize=(10, 10))
-    plt.imshow(query_images[i])
     out_masks = frame['segmentation']
-    out_masks = [cv2.resize(mask.astype(np.uint8), (query_images[i].shape[1], query_images[i].shape[0])) for mask in out_masks]
+    out_masks = [
+        cv2.resize(mask.astype(np.uint8), (query_images[i].shape[1], query_images[i].shape[0]))
+        for mask in out_masks
+    ]
     obj_ids = frame['obj_ids']
-    for j, mask in enumerate(out_masks):
-        sam_utils.show_mask(mask, plt.gca(), obj_ids[j], borders=True, alpha=0.75)
-    plt.axis('off')
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    img = Image.open(buf)
-    output_imgs.append(img)
+    vis_img = overlay_masks(query_images[i], out_masks, obj_ids, alpha=0.75, borders=True)
+    output_imgs.append(Image.fromarray(vis_img))
 
 # save the output
 if not os.path.exists(output_folder):
