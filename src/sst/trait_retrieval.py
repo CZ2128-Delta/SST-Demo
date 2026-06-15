@@ -17,25 +17,27 @@ def cycle_consistency(orig_image, target_image, masks_list, predictor, return_vi
     masks_list: list of dictionaries, the list of masks.
     predictor: the video tracker.
     '''
-    # return a list of reconstruction performance for masks
-    orig_image = cv2.resize(orig_image, (1024, 1024))
-    target_image = cv2.resize(target_image, (1024, 1024))
-    state = sam_utils.load_masks(predictor, [target_image], orig_image, masks_list, offload_state_to_cpu=False, offload_video_to_cpu=False)
+    target_h, target_w = target_image.shape[:2]
+    orig_image_model = cv2.resize(orig_image, (1024, 1024))
+    target_image_model = cv2.resize(target_image, (1024, 1024))
+    state = sam_utils.load_masks(predictor, [target_image_model], orig_image_model, masks_list, offload_state_to_cpu=False, offload_video_to_cpu=False)
     frames_info = sam_utils.propagate_masks(predictor, state, verbose=False)
     inferred_masks = frames_info[-1]
     if return_vis:
         vises = []
+        line_thickness = max(2, int(10 * min(target_h, target_w) / 1024))
         for obj_id, mask in zip(inferred_masks['obj_ids'], inferred_masks['segmentation']):
             if mask.shape != (1024, 1024):
                 mask = cv2.resize(mask.astype(np.uint8), (1024, 1024))
+            mask_orig = cv2.resize(mask.astype(np.uint8), (target_w, target_h))
             vis_img = target_image.copy()
-            contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            vis = cv2.drawContours(vis_img, contours, -1, (255, 0, 0), 10)
+            contours, _ = cv2.findContours(mask_orig.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            vis = cv2.drawContours(vis_img, contours, -1, (255, 0, 0), line_thickness)
             vises.append(vis)
     else:
         vises = None
     inferred_masks = [mask for mask in inferred_masks['segmentation']]
-    state = sam_utils.load_masks(predictor, [target_image], orig_image, inferred_masks, offload_state_to_cpu=False, offload_video_to_cpu=False)
+    state = sam_utils.load_masks(predictor, [target_image_model], orig_image_model, inferred_masks, offload_state_to_cpu=False, offload_video_to_cpu=False)
     frames_info = sam_utils.propagate_masks(predictor, state, verbose=False)
     reconstructed_masks = frames_info[-1]
     iou_records = np.zeros(len(masks_list))
