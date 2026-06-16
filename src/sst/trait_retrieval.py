@@ -85,8 +85,8 @@ support_mask = cv2.imread(support_mask_path, cv2.IMREAD_GRAYSCALE)
 support_mask = (support_mask == trait_id).astype(np.uint8)
 
 # load the query images
-query_images = sorted(os.listdir(query_images_folder))
-query_images = [cv2.imread(os.path.join(query_images_folder, img))[..., ::-1] for img in query_images]
+query_image_names = sorted(os.listdir(query_images_folder))
+query_images = [cv2.imread(os.path.join(query_images_folder, img))[..., ::-1] for img in query_image_names]
 
 # build the predictor
 video_predictor = sam_utils.build_sam2_predictor()
@@ -102,17 +102,34 @@ for i, query_image in enumerate(tqdm(query_images)):
 # sort the query images by cycle-consistency IoU (higher = better trait match)
 sorted_indices = np.argsort(retrieve_scores)[::-1]
 sorted_retrieved_images = [retrieve_vis[i] for i in sorted_indices]
+sorted_scores = [retrieve_scores[i] for i in sorted_indices]
+sorted_names = [query_image_names[i] for i in sorted_indices]
+
+# print and save top-k ranking
+print(f"\n{'Rank':<6} {'Image':<40} {'IoU Score':<10}")
+print("-" * 56)
+rank_lines = []
+for rank_i in range(min(top_k, len(sorted_names))):
+    line = f"{rank_i+1:<6} {sorted_names[rank_i]:<40} {sorted_scores[rank_i]:.4f}"
+    print(line)
+    rank_lines.append(line)
+
+os.makedirs(output_folder, exist_ok=True)
+rank_file = os.path.join(output_folder, f"top_{top_k}_ranking.txt")
+with open(rank_file, "w") as f:
+    f.write(f"{'Rank':<6} {'Image':<40} {'IoU Score':<10}\n")
+    f.write("-" * 56 + "\n")
+    for line in rank_lines:
+        f.write(line + "\n")
+print(f"\nRanking saved to {rank_file}")
 
 if output_format == "gif":
-    # save the top-k retrieved images as a gif
     print (f"Saving the top-{top_k} retrieved images as a gif...")
     gif_images = [Image.fromarray(img) for img in sorted_retrieved_images[:top_k]]
-    # resize the images to the same size
     min_shape = sorted(gif_images, key=lambda x: x.size)[0].size
     gif_images = [img.resize(min_shape, Image.ANTIALIAS) for img in gif_images]
     gif_images[0].save(os.path.join(output_folder, f"top_{top_k}_retrieved.gif"), save_all=True, append_images=gif_images[1:], duration=1000, loop=0)
 else:
-    # save the top-k retrieved images as png
     print (f"Saving the top-{top_k} retrieved images as png...")
     for i, img in enumerate(sorted_retrieved_images[:top_k]):
         cv2.imwrite(os.path.join(output_folder, f"retrieved_rank_{i+1}.png"), img[..., ::-1])
