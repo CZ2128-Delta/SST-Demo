@@ -60,33 +60,38 @@ def cycle_consistency(orig_image, target_image, masks_list, predictor, return_vi
 #%%
 # parse the arguments
 parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--support_image', type=str, help='Path to the support image.')
-parser.add_argument('--support_mask', type=str, help='Path to the support segmentation mask.')
+parser.add_argument('--query_image', type=str, help='Path to the query image.')
+parser.add_argument('--query_mask', type=str, help='Path to the query segmentation mask.')
 parser.add_argument('--trait_id', type=int, help='ID of the trait to retrieve, denoted by the integer value in the mask image.')
-parser.add_argument('--query_images', type=str, help='Path to the query images folder.')
+parser.add_argument('--gallery_images', type=str, help='Path to the gallery images folder.')
 parser.add_argument('--output', type=str, help='Path to the output folder.')
 parser.add_argument('--output_format', choices=["png", "gif"], default='gif', help='Output format (optional): gif, png.')
 parser.add_argument('--top_k', type=int, default=5, help='Number of top-k retrieved images to save.')
 
 args = parser.parse_args()
-support_image_path = args.support_image
-support_mask_path = args.support_mask
+query_image_path = args.query_image
+query_mask_path = args.query_mask
 trait_id = args.trait_id
-query_images_folder = args.query_images
+gallery_images_folder = args.gallery_images
 output_folder = args.output
 output_format = args.output_format
 top_k = args.top_k
 
 #%%
-# load the support image and mask
-print ("Loading support image and mask...")
-support_image = cv2.imread(support_image_path)[..., ::-1]
-support_mask = cv2.imread(support_mask_path, cv2.IMREAD_GRAYSCALE)
-support_mask = (support_mask == trait_id).astype(np.uint8)
+# load the query image and mask
+print ("Loading query image and mask...")
+query_image = cv2.imread(query_image_path)[..., ::-1]
+query_mask = cv2.imread(query_mask_path, cv2.IMREAD_GRAYSCALE)
+query_mask = (query_mask == trait_id).astype(np.uint8)
 
-# load the query images
-query_image_names = sorted(os.listdir(query_images_folder))
-query_images = [cv2.imread(os.path.join(query_images_folder, img))[..., ::-1] for img in query_image_names]
+# load the gallery images, skipping the query image if it's in the gallery folder
+query_image_realpath = os.path.realpath(query_image_path)
+gallery_image_names = sorted(os.listdir(gallery_images_folder))
+gallery_image_names = [
+    name for name in gallery_image_names
+    if os.path.realpath(os.path.join(gallery_images_folder, name)) != query_image_realpath
+]
+gallery_images = [cv2.imread(os.path.join(gallery_images_folder, img))[..., ::-1] for img in gallery_image_names]
 
 # build the predictor
 video_predictor = sam_utils.build_sam2_predictor()
@@ -94,16 +99,16 @@ video_predictor = sam_utils.build_sam2_predictor()
 retrieve_scores = []
 retrieve_vis = []
 print ("Retrieving images...")
-for i, query_image in enumerate(tqdm(query_images)):
-    iou_records, vises = cycle_consistency(support_image, query_image, [support_mask], video_predictor, return_vis=True)
+for i, gallery_image in enumerate(tqdm(gallery_images)):
+    iou_records, vises = cycle_consistency(query_image, gallery_image, [query_mask], video_predictor, return_vis=True)
     retrieve_scores.append(iou_records[0])
     retrieve_vis.append(vises[0])
 
-# sort the query images by cycle-consistency IoU (higher = better trait match)
+# sort the gallery images by cycle-consistency IoU (higher = better trait match)
 sorted_indices = np.argsort(retrieve_scores)[::-1]
 sorted_retrieved_images = [retrieve_vis[i] for i in sorted_indices]
 sorted_scores = [retrieve_scores[i] for i in sorted_indices]
-sorted_names = [query_image_names[i] for i in sorted_indices]
+sorted_names = [gallery_image_names[i] for i in sorted_indices]
 
 # print and save top-k ranking
 print(f"\n{'Rank':<6} {'Image':<40} {'IoU Score':<10}")

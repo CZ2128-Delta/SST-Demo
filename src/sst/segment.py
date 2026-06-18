@@ -39,14 +39,14 @@ parser.add_argument(
     nargs='+',
     help='Path(s) to support mask(s), same count as --support_image. Each mask uses labels 1..N per object (same as before).',
 )
-parser.add_argument('--query_images', type=str, help='Path to the query images folder.')
+parser.add_argument('--target_images', type=str, help='Path to the target images folder.')
 parser.add_argument('--output', type=str, help='Path to the output folder.')
 parser.add_argument('--output_format', choices=["png", "gif"], default='gif', help='Output format (optional): gif, png.')
 
 args = parser.parse_args()
 support_image_paths = args.support_image
 support_mask_paths = args.support_mask
-query_images_folder = args.query_images
+target_images_folder = args.target_images
 output_folder = args.output
 output_format = args.output_format
 
@@ -64,9 +64,9 @@ for p in support_mask_paths:
     )
 num_support = len(support_images)
 
-# load the query images
-query_images = sorted(os.listdir(query_images_folder))
-query_images = [cv2.imread(os.path.join(query_images_folder, img))[..., ::-1] for img in query_images]
+# load the target images
+target_images = sorted(os.listdir(target_images_folder))
+target_images = [cv2.imread(os.path.join(target_images_folder, img))[..., ::-1] for img in target_images]
 
 # build the predictor
 video_predictor = sam_utils.build_sam2_predictor()
@@ -74,7 +74,7 @@ video_predictor = sam_utils.build_sam2_predictor()
 # load the support image and mask
 print ("Inferring the masks...")
 state = sam_utils.load_masks(
-    video_predictor, query_images, support_images, support_masks_list, verbose=True
+    video_predictor, target_images, support_images, support_masks_list, verbose=True
 )
 frames_info = sam_utils.propagate_masks(video_predictor, state, verbose=True)
 frames_info_queries = frames_info[num_support:]
@@ -85,11 +85,11 @@ print ("Visualizing the results...")
 for i, frame in enumerate(frames_info_queries):
     out_masks = frame['segmentation']
     out_masks = [
-        cv2.resize(mask.astype(np.uint8), (query_images[i].shape[1], query_images[i].shape[0]))
+        cv2.resize(mask.astype(np.uint8), (target_images[i].shape[1], target_images[i].shape[0]))
         for mask in out_masks
     ]
     obj_ids = frame['obj_ids']
-    vis_img = overlay_masks(query_images[i], out_masks, obj_ids, alpha=0.75, borders=True)
+    vis_img = overlay_masks(target_images[i], out_masks, obj_ids, alpha=0.75, borders=True)
     output_imgs.append(Image.fromarray(vis_img))
 
 # save the output
